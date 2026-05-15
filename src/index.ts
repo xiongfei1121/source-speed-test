@@ -684,7 +684,15 @@ function getHTML(): string {
             name: item.name || item.key || item.url || 'Unknown',
             ...item,
           }))
-          .filter((item) => item.url && item.url.trim() !== ''); // 过滤掉空 URL
+          .filter((item) => {
+            // 过滤掉空 URL 和非 URL（如 csp_ 开头的内置爬虫）
+            if (!item.url || item.url.trim() === '') return false;
+            // 过滤掉 csp_ 开头的内置爬虫
+            if (item.url.startsWith('csp_')) return false;
+            // 过滤掉不包含 http 的非 URL
+            if (!item.url.includes('://')) return false;
+            return true;
+          });
       }
       
       // 如果是 TVBox 配置对象
@@ -695,7 +703,8 @@ function getHTML(): string {
         if (Array.isArray(data.sites)) {
           data.sites.forEach((site) => {
             const url = site.api || site.url || '';
-            if (url && url.trim() !== '') {
+            // 过滤掉空 URL、csp_ 开头的内置爬虫、非 URL
+            if (url && url.trim() !== '' && !url.startsWith('csp_') && url.includes('://')) {
               sources.push({
                 url,
                 name: site.name || site.key || url,
