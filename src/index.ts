@@ -678,11 +678,13 @@ function getHTML(): string {
     function parseConfig(data) {
       // 如果是数组，直接返回
       if (Array.isArray(data)) {
-        return data.map((item) => ({
-          url: item.url || item.api || '',
-          name: item.name || item.key || item.url || 'Unknown',
-          ...item,
-        }));
+        return data
+          .map((item) => ({
+            url: item.url || item.api || '',
+            name: item.name || item.key || item.url || 'Unknown',
+            ...item,
+          }))
+          .filter((item) => item.url && item.url.trim() !== ''); // 过滤掉空 URL
       }
       
       // 如果是 TVBox 配置对象
@@ -693,7 +695,7 @@ function getHTML(): string {
         if (Array.isArray(data.sites)) {
           data.sites.forEach((site) => {
             const url = site.api || site.url || '';
-            if (url) {
+            if (url && url.trim() !== '') {
               sources.push({
                 url,
                 name: site.name || site.key || url,
