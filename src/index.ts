@@ -51,13 +51,90 @@ const DEFAULT_CONFIG: TestConfig = {
 };
 
 /**
- * 测试单个视频源
+ * 判断是否为 API 源
  */
-async function testSource(
+function isApiSource(url: string): boolean {
+  return url.includes('/api/') || url.includes('?token=') || url.includes('source/');
+}
+
+/**
+ * 测试 API 源
+ */
+async function testApiSource(
   source: VideoSource,
-  config: TestConfig = DEFAULT_CONFIG
+  config: TestConfig
 ): Promise<SpeedTestResult> {
-  const startTime = Date.now();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), config.timeout);
+
+  try {
+    const startTime = Date.now();
+    
+    // API 源使用 GET 请求测试
+    const response = await fetch(source.url, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json, text/plain, */*',
+      },
+    });
+
+    const responseTime = Date.now() - startTime;
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    // 读取响应数据
+    const contentType = response.headers.get('content-type') || '';
+    let downloadedBytes = 0;
+
+    if (contentType.includes('application/json')) {
+      // JSON 响应
+      const data = await response.json();
+      downloadedBytes = JSON.stringify(data).length;
+    } else {
+      // 其他响应，读取部分数据
+      const reader = response.body?.getReader();
+      if (reader) {
+        const { value } = await reader.read();
+        downloadedBytes = value?.length || 0;
+        reader.releaseLock();
+      }
+    }
+
+    clearTimeout(timeoutId);
+
+    // API 源不计算下载速度，只记录响应时间
+    return {
+      url: source.url,
+      name: source.name || source.url,
+      success: true,
+      responseTime,
+      downloadSpeed: 0,
+      bitrate: 0,
+      testTime: new Date().toISOString(),
+    };
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    return {
+      url: source.url,
+      name: source.name || source.url,
+      success: false,
+      error: error.message || 'Unknown error',
+      testTime: new Date().toISOString(),
+    };
+  }
+}
+
+/**
+ * 测试视频文件源
+ */
+async function testVideoSource(
+  source: VideoSource,
+  config: TestConfig
+): Promise<SpeedTestResult> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), config.timeout);
 
@@ -130,6 +207,21 @@ async function testSource(
       error: error.message || 'Unknown error',
       testTime: new Date().toISOString(),
     };
+  }
+}
+
+/**
+ * 测试单个视频源
+ */
+async function testSource(
+  source: VideoSource,
+  config: TestConfig = DEFAULT_CONFIG
+): Promise<SpeedTestResult> {
+  // 判断源类型并使用不同的测试方式
+  if (isApiSource(source.url)) {
+    return testApiSource(source, config);
+  } else {
+    return testVideoSource(source, config);
   }
 }
 
@@ -776,17 +868,20 @@ function getHTML(): string {
       results.forEach((result, index) => {
         const row = tbody.insertRow();
         
+        // 判断是否为 API 源
+        const isApi = result.url.includes('/api/') || result.url.includes('?token=') || result.url.includes('source/');
+        
         row.innerHTML = \`
           <td>\${index + 1}</td>
-          <td title="\${result.url}">\${result.name}</td>
+          <td title="\${result.url}">\${result.name}\${isApi ? ' <span style="color:#666;font-size:0.8em;">[API]</span>' : ''}</td>
           <td class="\${result.success ? 'status-success' : 'status-failed'}">
             \${result.success ? '✓ 成功' : '✗ 失败'}
           </td>
           <td>\${result.success ? result.responseTime + ' ms' : '-'}</td>
-          <td>\${result.success ? result.downloadSpeed + ' MB/s' : '-'}</td>
-          <td>\${result.success ? result.bitrate + ' Mbps' : '-'}</td>
+          <td>\${result.success ? (isApi ? 'N/A' : result.downloadSpeed + ' MB/s') : '-'}</td>
+          <td>\${result.success ? (isApi ? 'N/A' : result.bitrate + ' Mbps') : '-'}</td>
           <td>
-            \${result.success ? \`
+            \${result.success && !isApi ? \`
               <div class="speed-bar">
                 <div class="speed-fill" style="width: \${Math.min(result.downloadSpeed / maxSpeed * 100, 100)}%"></div>
               </div>
