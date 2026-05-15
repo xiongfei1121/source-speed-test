@@ -14,6 +14,21 @@ interface VideoSource {
   [key: string]: any;
 }
 
+interface TVBoxSite {
+  key?: string;
+  name?: string;
+  api?: string;
+  url?: string;
+  type?: number;
+  [key: string]: any;
+}
+
+interface TVBoxConfig {
+  spider?: string;
+  sites?: TVBoxSite[];
+  [key: string]: any;
+}
+
 interface SpeedTestResult {
   url: string;
   name: string;
@@ -139,6 +154,43 @@ async function testSources(
     }
     return 0;
   });
+}
+
+/**
+ * 解析 TVBox 配置，提取视频源
+ */
+function parseTVBoxConfig(data: any): VideoSource[] {
+  const sources: VideoSource[] = [];
+
+  // 如果是数组，直接返回
+  if (Array.isArray(data)) {
+    return data.map((item) => ({
+      url: item.url || item.api || '',
+      name: item.name || item.key || item.url || 'Unknown',
+      type: item.type,
+      ...item,
+    }));
+  }
+
+  // 如果是 TVBox 配置对象
+  if (data && typeof data === 'object') {
+    // 提取 sites 数组
+    if (Array.isArray(data.sites)) {
+      data.sites.forEach((site: TVBoxSite) => {
+        const url = site.api || site.url || '';
+        if (url) {
+          sources.push({
+            url,
+            name: site.name || site.key || url,
+            type: site.type?.toString(),
+            ...site,
+          });
+        }
+      });
+    }
+  }
+
+  return sources;
 }
 
 /**
@@ -530,6 +582,41 @@ function getHTML(): string {
   <script>
     let testResults = [];
     
+    // 解析配置（支持数组和 TVBox 配置）
+    function parseConfig(data) {
+      // 如果是数组，直接返回
+      if (Array.isArray(data)) {
+        return data.map((item) => ({
+          url: item.url || item.api || '',
+          name: item.name || item.key || item.url || 'Unknown',
+          ...item,
+        }));
+      }
+      
+      // 如果是 TVBox 配置对象
+      if (data && typeof data === 'object') {
+        const sources = [];
+        
+        // 提取 sites 数组
+        if (Array.isArray(data.sites)) {
+          data.sites.forEach((site) => {
+            const url = site.api || site.url || '';
+            if (url) {
+              sources.push({
+                url,
+                name: site.name || site.key || url,
+                ...site,
+              });
+            }
+          });
+        }
+        
+        return sources;
+      }
+      
+      return [];
+    }
+    
     async function loadFromUrl() {
       const url = document.getElementById('urlInput').value.trim();
       if (!url) {
@@ -561,7 +648,9 @@ function getHTML(): string {
       // 优先使用 JSON 输入
       if (jsonInput) {
         try {
-          sources = JSON.parse(jsonInput);
+          const data = JSON.parse(jsonInput);
+          // 解析数据（支持数组和 TVBox 配置）
+          sources = parseConfig(data);
         } catch (error) {
           alert('JSON 格式错误: ' + error.message);
           return;
@@ -803,7 +892,11 @@ export default {
         }
 
         const data = await response.json();
-        return Response.json(data, { headers: corsHeaders });
+        
+        // 解析 TVBox 配置，提取视频源
+        const sources = parseTVBoxConfig(data);
+        
+        return Response.json(sources, { headers: corsHeaders });
       } catch (error: any) {
         return Response.json({ error: error.message }, { status: 500, headers: corsHeaders });
       }
