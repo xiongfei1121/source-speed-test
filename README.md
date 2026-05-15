@@ -20,7 +20,7 @@
 
 **方式一：输入订阅地址**
 ```
-https://tv.ztt.qzz.io/db.json
+https://****/*.json
 ```
 
 **方式二：直接粘贴 JSON 数据**
